@@ -48,6 +48,13 @@
                         Bayar Sekarang
                     </button>
                     <p class="text-xs text-slate-400 mt-4">*Anda akan diarahkan ke halaman pembayaran aman Midtrans.</p>
+
+                    <div class="mt-4">
+                        <a href="{{ route('checkout.payment', $order->id) }}" class="btn btn-ghost btn-sm text-slate-500 hover:text-primary gap-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                            Cek / Perbarui Status Pembayaran
+                        </a>
+                    </div>
                 @else
                     <div class="alert alert-error bg-red-50 text-red-600 rounded-xl border border-red-200">
                         Maaf, terjadi kesalahan saat menghubungi payment gateway. Silakan muat ulang halaman.
@@ -78,13 +85,14 @@
             payButton.addEventListener('click', function () {
                 snap.pay('{{ $payment->snap_token }}', {
                     onSuccess: function(result){
-                        window.location.href = "{{ route('dashboard') }}";
+                        window.location.reload();
                     },
                     onPending: function(result){
-                        // Do nothing, let user wait
+                        window.location.reload();
                     },
                     onError: function(result){
-                        alert("Pembayaran gagal!");
+                        alert("Pembayaran gagal atau dibatalkan!");
+                        window.location.reload();
                     },
                     onClose: function(){
                         // User closed popup

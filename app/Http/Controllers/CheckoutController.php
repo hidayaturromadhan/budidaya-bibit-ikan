@@ -117,9 +117,10 @@ class CheckoutController extends Controller
                 ];
             }
 
+            $midtransOrderId = $order->id . '-' . time();
             $params = [
                 'transaction_details' => [
-                    'order_id' => $order->id . '-' . time(), // Append time to avoid duplicate order ID in sandbox
+                    'order_id' => $midtransOrderId, // Append time to avoid duplicate order ID in sandbox
                     'gross_amount' => (int) ($totalAmount + $validated['shipping_cost']),
                 ],
                 'customer_details' => [
@@ -139,7 +140,8 @@ class CheckoutController extends Controller
             try {
                 $snapToken = \Midtrans\Snap::getSnapToken($params);
                 $payment->update([
-                    'snap_token' => $snapToken
+                    'snap_token' => $snapToken,
+                    'qris_reference' => $midtransOrderId,
                 ]);
             } catch (\Throwable $e) {
                 \Log::error('Midtrans Error: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
@@ -159,6 +161,133 @@ class CheckoutController extends Controller
         if ($order->user_id !== Auth::id()) abort(403);
         
         $payment = $order->payment;
+
+        // Auto sync status from Midtrans if still waiting and has reference
+        if ($payment && $payment->status === 'menunggu' && !empty($payment->qris_reference)) {
+            $this->syncMidtransStatus($order, $payment);
+            $payment->refresh();
+        }
+
+        // If payment is still waiting and snap_token is empty or missing, regenerate it
+        if ($payment && $payment->status === 'menunggu' && empty($payment->snap_token)) {
+            $this->generateSnapTokenForOrder($order, $payment);
+            $payment->refresh();
+        }
+
         return view('checkout.payment', compact('order', 'payment'));
+    }
+
+    private function generateSnapTokenForOrder(Order $order, Payment $payment)
+    {
+        \Midtrans\Config::$serverKey = config('midtrans.server_key');
+        \Midtrans\Config::$isProduction = config('midtrans.is_production');
+        \Midtrans\Config::$isSanitized = config('midtrans.is_sanitized');
+        \Midtrans\Config::$is3ds = config('midtrans.is_3ds');
+
+        $items = [];
+        $itemsTotal = 0;
+        foreach ($order->items as $item) {
+            $itemsTotal += $item->price * $item->quantity;
+            $items[] = [
+                'id' => $item->fish_seed_size_id,
+                'price' => (int) $item->price,
+                'quantity' => $item->quantity,
+                'name' => mb_substr($item->fishSeedSize->fishSeed->name ?? ('Item ' . $item->id), 0, 50),
+            ];
+        }
+
+        if ($order->shipping_cost > 0) {
+            $items[] = [
+                'id' => 'SHIPPING',
+                'price' => (int) $order->shipping_cost,
+                'quantity' => 1,
+                'name' => 'Ongkos Kirim (' . mb_substr($order->expedition_name ?? 'Kurir', 0, 20) . ')',
+            ];
+        }
+
+        $midtransOrderId = $order->id . '-' . time();
+        $params = [
+            'transaction_details' => [
+                'order_id' => $midtransOrderId,
+                'gross_amount' => (int) ($itemsTotal + $order->shipping_cost),
+            ],
+            'customer_details' => [
+                'first_name' => mb_substr($order->shippingAddress->recipient_name ?? Auth::user()->name, 0, 50),
+                'phone' => $order->shippingAddress->phone ?? '',
+                'email' => Auth::user()->email,
+            ],
+            'item_details' => $items,
+        ];
+
+        try {
+            $snapToken = \Midtrans\Snap::getSnapToken($params);
+            $payment->update([
+                'snap_token' => $snapToken,
+                'qris_reference' => $midtransOrderId,
+            ]);
+        } catch (\Throwable $e) {
+            \Log::error('Regenerate Snap Token Error: ' . $e->getMessage());
+        }
+    }
+
+    private function syncMidtransStatus(Order $order, Payment $payment)
+    {
+        try {
+            \Midtrans\Config::$serverKey = config('midtrans.server_key');
+            \Midtrans\Config::$isProduction = config('midtrans.is_production');
+
+            $status = \Midtrans\Transaction::status($payment->qris_reference);
+            if ($status) {
+                $transactionStatus = $status->transaction_status ?? null;
+                $fraudStatus = $status->fraud_status ?? null;
+                $paymentType = $status->payment_type ?? null;
+
+                if ($transactionStatus == 'capture') {
+                    if ($paymentType == 'credit_card' && $fraudStatus == 'challenge') {
+                        $payment->update(['status' => 'menunggu']);
+                    } else {
+                        $payment->update([
+                            'status' => 'berhasil',
+                            'paid_at' => now(),
+                            'midtrans_transaction_id' => $status->transaction_id ?? null,
+                        ]);
+                        $this->onPaymentSuccess($order);
+                    }
+                } else if ($transactionStatus == 'settlement') {
+                    $payment->update([
+                        'status' => 'berhasil',
+                        'paid_at' => now(),
+                        'midtrans_transaction_id' => $status->transaction_id ?? null,
+                    ]);
+                    $this->onPaymentSuccess($order);
+                } else if (in_array($transactionStatus, ['deny', 'expire', 'cancel'])) {
+                    $payment->update(['status' => $transactionStatus == 'expire' ? 'kedaluwarsa' : 'gagal']);
+                    $order->update(['status' => 'dibatalkan']);
+                }
+            }
+        } catch (\Throwable $e) {
+            // Transaction might not exist yet if user hasn't completed payment in Midtrans
+        }
+    }
+
+    private function onPaymentSuccess(Order $order)
+    {
+        $order->update(['status' => 'diproses']);
+
+        foreach ($order->items as $item) {
+            $stock = Stock::firstOrCreate(
+                ['fish_seed_size_id' => $item->fish_seed_size_id],
+                ['quantity' => 0]
+            );
+            
+            $stock->decrement('quantity', $item->quantity);
+
+            StockMovement::create([
+                'fish_seed_size_id' => $item->fish_seed_size_id,
+                'type' => 'out',
+                'quantity' => $item->quantity,
+                'note' => 'Penjualan Order #' . $order->id . ' (Midtrans)',
+            ]);
+        }
     }
 }

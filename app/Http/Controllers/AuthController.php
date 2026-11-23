@@ -15,6 +15,28 @@ class AuthController extends Controller
         return view('auth.login');
     }
 
+    public function login(Request $request)
+    {
+        $credentials = $request->validate([
+            'email' => 'required|email',
+            'password' => 'required|string',
+        ]);
+
+        if (Auth::attempt($credentials, $request->boolean('remember'))) {
+            $request->session()->regenerate();
+
+            if (Auth::user()->role === 'admin') {
+                return redirect()->intended('/admin/dashboard');
+            }
+
+            return redirect()->intended('/');
+        }
+
+        return back()->withErrors([
+            'email' => 'Email atau kata sandi yang Anda masukkan salah.',
+        ])->onlyInput('email');
+    }
+
     public function logout(Request $request)
     {
         Auth::logout();

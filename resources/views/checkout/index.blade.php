@@ -70,8 +70,9 @@
                             <select id="courier" name="expedition_name" class="select select-bordered w-full bg-slate-50 border-slate-200 focus:bg-white focus:border-primary focus:ring-1 focus:ring-primary rounded-xl" required disabled>
                                 <option value="" disabled selected>Pilih Kurir</option>
                                 <option value="jne">JNE</option>
-                                <option value="pos">POS Indonesia</option>
                                 <option value="tiki">TIKI</option>
+                                <option value="pos">POS Indonesia</option>
+                                <option value="khusus">Kurir Khusus Bibit (Beroksigen)</option>
                             </select>
                         </div>
                         <div class="form-control w-full">

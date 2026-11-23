@@ -60,7 +60,7 @@ class OngkirController extends Controller
     }
 
     /**
-     * Check shipping cost
+     * Check shipping cost (menggunakan data tarif dummy yang stabil & cepat untuk demo)
      */
     public function checkCost(Request $request)
     {
@@ -70,44 +70,137 @@ class OngkirController extends Controller
             'courier' => 'required|string',
         ]);
 
-        try {
-            // Add 'c_' prefix for cities as required by BinderByte cost endpoint
-            $origin = 'c_' . config('services.binderbyte.origin_city_id', '31.74'); // Default South Jakarta
-            $destination = 'c_' . $request->destination;
+        $courier = strtolower($request->courier);
+        $weightKg = max(1, (int) ceil($request->weight / 1000));
 
-            $response = Http::withoutVerifying()->timeout(10)->asForm()->post('https://api.binderbyte.com/v1/cost', [
-                'api_key' => config('services.binderbyte.key'),
-                'origin' => $origin,
-                'destination' => $destination,
-                'weight' => ceil($request->weight / 1000), // BinderByte uses kg
-                'courier' => $request->courier
-            ]);
-
-            if ($response->successful() && isset($response['data']['results'][0]['costs'])) {
-                $costs = $response['data']['results'][0]['costs'];
-                
-                $mappedCosts = array_map(function($c) {
-                    // Extract days from string like "1-2 hari"
-                    $etd = trim(str_replace('hari', '', strtolower($c['estimated'])));
-                    return [
-                        'service' => $c['service'],
-                        'description' => $c['type'],
-                        'cost' => [
-                            [
-                                'value' => (int)$c['price'],
-                                'etd' => $etd,
-                                'note' => ''
-                            ]
+        // Data dummy tarif pengiriman yang realistis per kurir
+        $dummyRates = [
+            'jne' => [
+                [
+                    'service' => 'JNE REG',
+                    'description' => 'Layanan Reguler',
+                    'cost' => [
+                        [
+                            'value' => 18000 * $weightKg,
+                            'etd' => '2-3',
+                            'note' => ''
                         ]
-                    ];
-                }, $costs);
+                    ]
+                ],
+                [
+                    'service' => 'JNE YES',
+                    'description' => 'Yakin Esok Sampai',
+                    'cost' => [
+                        [
+                            'value' => 32000 * $weightKg,
+                            'etd' => '1',
+                            'note' => ''
+                        ]
+                    ]
+                ],
+                [
+                    'service' => 'JNE OKE',
+                    'description' => 'Ongkos Kirim Ekonomis',
+                    'cost' => [
+                        [
+                            'value' => 14000 * $weightKg,
+                            'etd' => '3-5',
+                            'note' => ''
+                        ]
+                    ]
+                ],
+            ],
+            'tiki' => [
+                [
+                    'service' => 'TIKI REG',
+                    'description' => 'Regular Service',
+                    'cost' => [
+                        [
+                            'value' => 17000 * $weightKg,
+                            'etd' => '2-3',
+                            'note' => ''
+                        ]
+                    ]
+                ],
+                [
+                    'service' => 'TIKI ONS',
+                    'description' => 'Over Night Services',
+                    'cost' => [
+                        [
+                            'value' => 30000 * $weightKg,
+                            'etd' => '1',
+                            'note' => ''
+                        ]
+                    ]
+                ],
+                [
+                    'service' => 'TIKI ECO',
+                    'description' => 'Economy Service',
+                    'cost' => [
+                        [
+                            'value' => 12000 * $weightKg,
+                            'etd' => '4-6',
+                            'note' => ''
+                        ]
+                    ]
+                ],
+            ],
+            'pos' => [
+                [
+                    'service' => 'POS Reguler',
+                    'description' => 'Pos Reguler Nusantara',
+                    'cost' => [
+                        [
+                            'value' => 15000 * $weightKg,
+                            'etd' => '2-4',
+                            'note' => ''
+                        ]
+                    ]
+                ],
+                [
+                    'service' => 'POS Nextday',
+                    'description' => 'Pos Express Next Day',
+                    'cost' => [
+                        [
+                            'value' => 28000 * $weightKg,
+                            'etd' => '1',
+                            'note' => ''
+                        ]
+                    ]
+                ],
+            ],
+            'khusus' => [
+                [
+                    'service' => 'Kurir Khusus Bibit (Beroksigen)',
+                    'description' => 'Khusus Benih/Bibit Ikan Beroksigen & Garansi Hidup',
+                    'cost' => [
+                        [
+                            'value' => 25000 * $weightKg,
+                            'etd' => '1-2',
+                            'note' => ''
+                        ]
+                    ]
+                ]
+            ],
+        ];
 
-                return response()->json($mappedCosts);
-            }
-        } catch (\Exception $e) {
-            \Log::error('BinderByte checkCost Error: ' . $e->getMessage());
+        if (isset($dummyRates[$courier])) {
+            return response()->json($dummyRates[$courier]);
         }
 
-        return response()->json([]);
+        // Fallback jika kurir lain
+        return response()->json([
+            [
+                'service' => strtoupper($courier) . ' Reguler',
+                'description' => 'Layanan Standar Pengiriman',
+                'cost' => [
+                    [
+                        'value' => 20000 * $weightKg,
+                        'etd' => '2-3',
+                        'note' => ''
+                    ]
+                ]
+            ]
+        ]);
     }
 }

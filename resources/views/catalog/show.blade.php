@@ -14,15 +14,27 @@
     </div>
 
     <div class="flex flex-col lg:flex-row gap-8 lg:gap-10">
+        @php
+            $totalStock = $fishSeed->sizes->sum(function($s) { return $s->stock ? $s->stock->quantity : 0; });
+            $isOutOfStock = $totalStock <= 0;
+            $minPrice = $fishSeed->sizes->min('price');
+        @endphp
         <!-- Left Column: Images -->
         <div class="w-full lg:w-[350px] shrink-0">
-            <div class="w-full aspect-square bg-slate-50 rounded-xl overflow-hidden mb-4 border border-slate-200">
+            <div class="w-full aspect-square bg-slate-50 rounded-xl overflow-hidden mb-4 border border-slate-200 relative {{ $isOutOfStock ? 'opacity-65 grayscale-[35%]' : '' }}">
                 @if($fishSeed->image)
                     <img src="{{ asset('storage/' . $fishSeed->image) }}" class="w-full h-full object-cover">
                 @else
                     <div class="w-full h-full flex flex-col items-center justify-center text-slate-300">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                         <span class="text-xs uppercase tracking-wider font-semibold">No Image</span>
+                    </div>
+                @endif
+                @if($isOutOfStock)
+                    <div class="absolute inset-0 flex items-center justify-center z-10" style="background-color: rgba(15, 23, 42, 0.6); backdrop-filter: blur(1px);">
+                        <span class="text-white text-sm font-black px-5 py-2 rounded-full shadow-xl uppercase tracking-wider" style="background-color: #dc2626; color: #ffffff; border: 2px solid #ffffff; letter-spacing: 0.08em; box-shadow: 0 4px 14px rgba(0,0,0,0.4);">
+                            HABIS
+                        </span>
                     </div>
                 @endif
             </div>
@@ -32,16 +44,18 @@
         <div class="flex-1 min-w-0 lg:max-w-xl">
             <h1 class="text-lg sm:text-xl font-bold text-slate-900 mb-2 leading-snug">{{ $fishSeed->name }}</h1>
             
-            <div class="flex items-center text-xs sm:text-sm text-slate-500 mb-4">
-                <span class="text-slate-700">Terjual 10rb+</span>
-                <span class="mx-2">&bull;</span>
-                <svg class="h-4 w-4 text-yellow-400 mr-1 fill-current" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
-                <span class="text-slate-700 font-semibold mr-1">4.9</span>
-                <span>(1.2rb rating)</span>
+            <div class="flex items-center text-xs sm:text-sm text-slate-500 mb-4 gap-2">
+                <span class="text-slate-700 font-semibold">{{ number_format($fishSeed->total_sold, 0, ',', '.') }} Terjual</span>
+                <span class="text-slate-300">&bull;</span>
+                @if($isOutOfStock)
+                    <span class="inline-flex items-center text-xs font-bold px-2.5 py-0.5 rounded shadow-xs" style="background-color: #dc2626; color: #ffffff;">Habis</span>
+                @else
+                    <span class="inline-flex items-center text-xs font-bold px-2.5 py-0.5 rounded shadow-xs" style="background-color: #059669; color: #ffffff;">Ready: {{ number_format($totalStock, 0, ',', '.') }} ekor</span>
+                @endif
             </div>
 
             @php $minPrice = $fishSeed->sizes->min('price'); @endphp
-            <div class="text-3xl font-extrabold text-slate-900 mb-8" id="display-price">
+            <div class="text-3xl font-black text-blue-600 mb-8" id="display-price">
                 Rp{{ number_format($minPrice ?? 0, 0, ',', '.') }}
             </div>
 
